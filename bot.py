@@ -19,11 +19,16 @@ dp = Dispatcher()
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 
 # --- Клавіатури ---
-def get_main_keyboard(is_active):
-    buttons =,
-       
+def get_main_keyboard(is_active: bool) -> InlineKeyboardMarkup:
+    buttons = [
+        [InlineKeyboardButton(text="🔗 Встановити посилання", callback_data="set_link")],
+        [InlineKeyboardButton(text="👤 Профіль", callback_data="profile")],
+        [InlineKeyboardButton(text="💳 Оплатити підписку", callback_data="pay")],
+    ]
+
     if not is_active:
-        buttons.insert(0,)
+        buttons.insert(0, [InlineKeyboardButton(text="🚀 Активувати", callback_data="pay")])
+
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 # --- Обробники команд (Handlers) ---
