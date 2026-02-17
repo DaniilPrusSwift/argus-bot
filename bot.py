@@ -18,6 +18,9 @@ bot = Bot(token=config.BOT_TOKEN)
 dp = Dispatcher()
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 
+# Список доменів, які підтримує бот
+SUPPORTED_DOMAINS = ["olx.ua", "auto.ria.com", "rst.ua"]
+
 # --- Клавіатури ---
 def get_main_keyboard(is_active: bool) -> InlineKeyboardMarkup:
     buttons = [
@@ -38,7 +41,7 @@ async def cmd_start(message: types.Message):
     await database.add_user(message.from_user.id, message.from_user.username)
     await message.answer(
         f"Вітаю, {message.from_user.first_name}! 🤖\n\n"
-        "Я — Argus, система автоматичного моніторингу OLX.\n"
+        "Я — Argus, система моніторингу оголошень (OLX, Auto.RIA, RST).\n"
         "Я буду надсилати нові оголошення за твоїм запитом миттєво.\n\n"
         "Тобі надано **24 години** тестового доступу.",
         reply_markup=get_main_keyboard(True)
@@ -47,20 +50,35 @@ async def cmd_start(message: types.Message):
 @dp.callback_query(F.data == "set_link")
 async def ask_link(callback: types.CallbackQuery):
     await callback.message.answer(
-        "Надішліть мені посилання на пошук OLX з вже обраними фільтрами.\n\n"
-        "Приклад:\n`https://www.olx.ua/uk/elektronika/telefony/?search%5Bfilter_float_price%3Afrom%5D=5000`"
+        "Надішліть мені посилання на пошук з **OLX, Auto.RIA або RST** з вже обраними фільтрами.\n\n"
+        "Приклад:\n`https://www.olx.ua/uk/elektronika/telefony/...`\n"
+        "або\n`https://auto.ria.com/uk/search/...`"
     , parse_mode="Markdown")
     await callback.answer()
 
-@dp.message(F.text.contains("olx.ua"))
+# --- Оновлений обробник посилань (підтримує різні сайти) ---
+@dp.message(lambda msg: any(domain in (msg.text or "") for domain in SUPPORTED_DOMAINS))
 async def save_link(message: types.Message):
-    # Валідація посилання (базова)
-    if "http" not in message.text:
-        await message.answer("Будь ласка, надішліть коректне посилання.")
+    url = message.text.strip()
+    
+    # Валідація http/https
+    if not url.startswith("http"):
+        await message.answer("⚠️ Посилання має починатися з http:// або https://")
         return
         
-    await database.update_search_url(message.from_user.id, message.text.strip())
-    await message.answer("✅ Посилання збережено! Моніторинг розпочато.", reply_markup=get_main_keyboard(True))
+    await database.update_search_url(message.from_user.id, url)
+    
+    # Визначаємо назву сайту для повідомлення
+    site_name = "Сайт"
+    if "olx.ua" in url: site_name = "OLX"
+    elif "auto.ria.com" in url: site_name = "Auto.RIA"
+    elif "rst.ua" in url: site_name = "RST"
+
+    await message.answer(
+        f"✅ Посилання на **{site_name}** збережено!\nМоніторинг розпочато.", 
+        reply_markup=get_main_keyboard(True),
+        parse_mode="Markdown"
+    )
 
 @dp.callback_query(F.data == "pay")
 async def send_invoice(callback: types.CallbackQuery):
@@ -75,6 +93,7 @@ async def send_invoice(callback: types.CallbackQuery):
     await callback.message.answer(msg, parse_mode="Markdown", disable_web_page_preview=True)
     await callback.answer()
 
+# --- Оновлений Профіль з таймером ---
 @dp.callback_query(F.data == "profile")
 async def show_profile(callback: types.CallbackQuery):
     status = await database.get_user_sub_status(callback.from_user.id)
@@ -82,15 +101,30 @@ async def show_profile(callback: types.CallbackQuery):
         await callback.answer("Помилка профілю")
         return
         
-    end_date = datetime.fromtimestamp(status['sub_end_date']).strftime('%Y-%m-%d %H:%M')
+    end_date_dt = datetime.fromtimestamp(status['sub_end_date'])
+    end_date_str = end_date_dt.strftime('%Y-%m-%d %H:%M')
+    
+    # Розрахунок часу, що залишився
+    now = datetime.now()
+    remaining = end_date_dt - now
+    
+    if remaining.total_seconds() > 0:
+        days = remaining.days
+        hours = remaining.seconds // 3600
+        minutes = (remaining.seconds % 3600) // 60
+        time_left_str = f"{days} дн. {hours} год. {minutes} хв."
+    else:
+        time_left_str = "Термін вийшов ⌛️"
+
     state = "Активна ✅" if status['is_active'] else "Неактивна ❌"
     url = status['url'] if status['url'] else "Не встановлено"
     
     msg = (
         f"🆔 ID: `{callback.from_user.id}`\n"
         f"Статус: {state}\n"
-        f"Закінчується: {end_date}\n"
-        f"Посилання: {url}"
+        f"Закінчується: {end_date_str}\n"
+        f"⏱ **Залишилось:** {time_left_str}\n\n"
+        f"🔗 Посилання: {url}"
     )
     await callback.message.answer(msg, parse_mode="Markdown")
     await callback.answer()
@@ -110,6 +144,7 @@ async def monitoring_worker():
             
             for url, user_ids in url_map.items():
                 logging.info(f"Checking URL for {len(user_ids)} users: {url}")
+                # Скрапер сам розбереться, який це сайт (OLX/RIA/RST)
                 new_ads = await run_scraper_task(url)
                 
                 for ad in new_ads:
@@ -129,10 +164,10 @@ async def monitoring_worker():
                             except Exception as e:
                                 logging.warning(f"Failed to send to {uid}: {e}")
                 
-                # Пауза між запитами для різних URL, щоб не перевантажити сервер
+                # Пауза між запитами для різних URL
                 await asyncio.sleep(5) 
                 
-            # Глобальна пауза циклу (наприклад, раз на хвилину)
+            # Глобальна пауза циклу
             await asyncio.sleep(60)
             
         except Exception as e:
@@ -150,10 +185,8 @@ async def monobank_webhook_handler(request):
             amount = item['amount'] # копійки
             comment = item.get('comment', '')
             
-            # Логіка верифікації
-            if amount >= 40000: # 400.00 грн
-                # Шукаємо ID користувача в коментарі
-                # Простий пошук числа в рядку
+            # Логіка верифікації (400 грн)
+            if amount >= 40000: 
                 words = comment.split()
                 user_id = None
                 for word in words:
@@ -164,7 +197,10 @@ async def monobank_webhook_handler(request):
                 if user_id:
                     new_end = await database.extend_subscription(user_id, 30)
                     if new_end:
-                        await bot.send_message(user_id, "✅ Оплату отримано! Підписку продовжено на 30 днів.")
+                        try:
+                            await bot.send_message(user_id, "✅ Оплату отримано! Підписку продовжено на 30 днів.")
+                        except:
+                            pass
                         return web.Response(status=200)
         
         return web.Response(status=200)
@@ -184,7 +220,7 @@ def main():
     # Налаштування веб-сервера aiohttp
     app = web.Application()
     
-    # Маршрут для Telegram (вбудований в aiogram)
+    # Маршрут для Telegram
     webhook_requests_handler = SimpleRequestHandler(
         dispatcher=dp,
         bot=bot,
