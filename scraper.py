@@ -1,15 +1,24 @@
-# Fixes for scraper.py
+# Updated scraper.py
 
-# Updated initialization of ads_data and extraction of ad_id
+# Importing necessary libraries
+import requests
+from bs4 import BeautifulSoup
 
-# Sample content for demonstrating the updates
+class Scraper:
+    def __init__(self):
+        self.ads_data = []  # Correcting ads_data initialization
 
-# Assume imports and other necessary code parts are here
+    def fetch_ads(self):
+        url = 'https://example.com/ads'
+        response = requests.get(url)
+        self.parse_ads(response.text)
 
+    def parse_ads(self, html):
+        soup = BeautifulSoup(html, 'html.parser')
+        ads = soup.find_all('div', class_='ad')
+        for ad in ads:
+            ad_id = ad['data-id']  # Correcting ad_id extraction
+            self.ads_data.append({'id': ad_id, 'details': ad.text})
 
-def main():
-    # ... other code ...
-    ads_data = []  # Initialize ads_data as an empty list on line 28
-    # ... other code ...
-    ad_id = some_variable.split('.')[0]  # Properly extract ad_id on line 70
-    # ... other code ...
+scraper = Scraper()
+scraper.fetch_ads()
