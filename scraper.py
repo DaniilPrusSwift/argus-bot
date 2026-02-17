@@ -1,24 +1,22 @@
-# Updated scraper.py
-
-# Importing necessary libraries
-import requests
+import undetected_chromedriver as uc
 from bs4 import BeautifulSoup
 
-class Scraper:
-    def __init__(self):
-        self.ads_data = []  # Correcting ads_data initialization
+# Initialize an empty list for ads data
+ads_data = []
 
-    def fetch_ads(self):
-        url = 'https://example.com/ads'
-        response = requests.get(url)
-        self.parse_ads(response.text)
+def extract_ad_id(url):
+    # Extract ad_id from the URL by taking the first element after splitting by dot
+    return url.split('.')[0].split('/')[-1].strip()  # Adjust splitting based on expected URL format
 
-    def parse_ads(self, html):
-        soup = BeautifulSoup(html, 'html.parser')
-        ads = soup.find_all('div', class_='ad')
-        for ad in ads:
-            ad_id = ad['data-id']  # Correcting ad_id extraction
-            self.ads_data.append({'id': ad_id, 'details': ad.text})
+# example function to scrape data - implement your own logic
 
-scraper = Scraper()
-scraper.fetch_ads()
+def scrape_olx(url):
+    driver = uc.Chrome()
+    driver.get(url)
+    soup = BeautifulSoup(driver.page_source, 'html.parser')
+    ads = soup.find_all('div', class_='ad-details')
+    for ad in ads:
+        ad_id = extract_ad_id(ad.find('a')['href'])
+        # add your extraction logic here, e.g.,
+        ads_data.append({'ad_id': ad_id, 'other_data': '...'})  # Placeholder
+    driver.quit()
