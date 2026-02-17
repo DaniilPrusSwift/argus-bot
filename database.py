@@ -2,7 +2,7 @@ import aiosqlite
 import time
 import logging
 
-DB_NAME = "argus.db"
+DB_NAME = "/app/data/argus.db"
 
 async def init_db():
     """Ініціалізація структури бази даних при першому запуску"""
