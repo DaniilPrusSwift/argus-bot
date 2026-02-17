@@ -105,7 +105,7 @@ async def monitoring_worker():
             url_map = {}
             for user_id, url in tasks:
                 if url not in url_map:
-                    url_map[url] =
+                    url_map[url] = []
                 url_map[url].append(user_id)
             
             for url, user_ids in url_map.items():
